@@ -1,11 +1,187 @@
 "use client";
+
 import { FormEvent, useEffect, useState } from "react";
-type Product={id:string;name:string;category:string|null;sellingPrice:number|string;costPrice:number|string;stockQuantity:number};
-const money=(v:number|string)=>`₦${Number(v).toLocaleString()}`;
-export default function InventoryPage(){const [tab,setTab]=useState("products");const [items,setItems]=useState<Product[]>([]);const [form,setForm]=useState({name:"",category:"",sellingPrice:"",costPrice:"",stockQuantity:""});const [editing,setEditing]=useState<string|null>(null);const [message,setMessage]=useState("");const [loading,setLoading]=useState(true);
-async function load(){setLoading(true);try{const r=await fetch("/api/products");const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load inventory");setItems(d.products)}catch(e){setMessage(e instanceof Error?e.message:"Unable to load inventory")}finally{setLoading(false)}}useEffect(()=>{load()},[]);
-function reset(){setForm({name:"",category:"",sellingPrice:"",costPrice:"",stockQuantity:""});setEditing(null)}
-async function save(e:FormEvent){e.preventDefault();setMessage("");try{const payload={name:form.name,category:form.category,sellingPrice:Number(form.sellingPrice),costPrice:Number(form.costPrice||0),stockQuantity:Number(form.stockQuantity||0)};const r=await fetch("/api/products",{method:editing?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(editing?{...payload,id:editing}:payload)});const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to save product");setMessage(editing?"Product updated.":"Product added.");reset();load()}catch(e){setMessage(e instanceof Error?e.message:"Unable to save product")}}
-function edit(p:Product){setEditing(p.id);setForm({name:p.name,category:p.category||"",sellingPrice:String(p.sellingPrice),costPrice:String(p.costPrice),stockQuantity:String(p.stockQuantity)})}
-async function remove(id:string){if(!confirm("Delete this product?"))return;const r=await fetch(`/api/products?id=${encodeURIComponent(id)}`,{method:"DELETE"});const d=await r.json();if(!r.ok){setMessage(d.error||"Unable to delete product");return}setMessage("Product deleted.");load()}
-return <main className="min-h-screen bg-[#0b0b0b] p-5 text-white md:p-8"><div className="mx-auto max-w-7xl"><h1 className="text-2xl font-semibold">Inventory</h1>{message&&<p className="mt-4 rounded-xl bg-white/5 p-3 text-sm text-orange-300">{message}</p>}<section className="mt-6 rounded-2xl border border-white/10 bg-[#151515] p-5"><h2 className="font-semibold">Inventory Snapshot</h2><div className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-xl bg-white/5 p-4"><p className="text-xs text-white/40">Products</p><p className="mt-1 text-2xl font-semibold">{items.length}</p></div><div className="rounded-xl bg-white/5 p-4"><p className="text-xs text-white/40">Units in stock</p><p className="mt-1 text-2xl font-semibold">{items.reduce((s,p)=>s+p.stockQuantity,0)}</p></div><div className="rounded-xl bg-white/5 p-4"><p className="text-xs text-white/40">Low stock</p><p className="mt-1 text-2xl font-semibold">{items.filter(p=>p.stockQuantity<=5).length}</p></div></div></section><div className="mt-6 flex gap-2 border-b border-white/10">{["products","services"].map(x=><button key={x} onClick={()=>setTab(x)} className={`px-4 py-3 text-sm capitalize ${tab===x?"border-b-2 border-orange-500 text-orange-400":"text-white/45"}`}>{x}</button>)}</div>{tab==="products"?<><form onSubmit={save} className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-[#151515] p-5 md:grid-cols-3"><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Name" className="field"/><input value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="Category (optional)" className="field"/><input required value={form.sellingPrice} onChange={e=>setForm({...form,sellingPrice:e.target.value})} placeholder="Selling price" type="number" min="0" className="field"/><input value={form.costPrice} onChange={e=>setForm({...form,costPrice:e.target.value})} placeholder="Cost price" type="number" min="0" className="field"/><input required value={form.stockQuantity} onChange={e=>setForm({...form,stockQuantity:e.target.value})} placeholder="Stock quantity" type="number" min="0" className="field"/><div className="flex gap-2"><button className="flex-1 rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-black">{editing?"Save Changes":"+ Add Item"}</button>{editing&&<button type="button" onClick={reset} className="rounded-xl bg-white/10 px-4 py-3 text-sm">Cancel</button>}</div></form><div className="mt-6 overflow-x-auto rounded-2xl border border-white/10 bg-[#151515] p-5"><table className="w-full text-left text-sm"><thead className="text-xs text-white/40"><tr>{["NAME","CATEGORY","SELLING PRICE","COST PRICE","STOCK","ACTIONS"].map(x=><th key={x} className="px-3 py-3">{x}</th>)}</tr></thead><tbody>{loading?<tr><td colSpan={6} className="px-3 py-10 text-center text-white/30">Loading...</td></tr>:items.map(p=><tr key={p.id} className="border-t border-white/5"><td className="px-3 py-4">{p.name}</td><td className="px-3 py-4">{p.category||"Uncategorised"}</td><td className="px-3 py-4">{money(p.sellingPrice)}</td><td className="px-3 py-4">{money(p.costPrice)}</td><td className={`px-3 py-4 ${p.stockQuantity<=5?"text-orange-400":""}`}>{p.stockQuantity}</td><td className="px-3 py-4"><button onClick={()=>edit(p)} className="mr-3 text-orange-400">Edit</button><button onClick={()=>remove(p.id)} className="text-red-400">Delete</button></td></tr>)}</tbody></table></div></>:<div className="mt-6 rounded-2xl border border-white/10 bg-[#151515] p-10 text-center text-white/35">Services management is not part of the product inventory API yet.</div>}</div></main>}
+import DashboardShell from "@/components/layout/DashboardShell";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { api } from "@/lib/api";
+import type { InventoryMovement, Product } from "@/lib/types";
+
+export default function InventoryPage() {
+  const { user } = useAuth();
+  const storeId = user?.store_id ?? null;
+  const [products, setProducts] = useState<Product[]>([]);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [movementProduct, setMovementProduct] = useState<number | null>(null);
+  const [form, setForm] = useState({ name: "", price: "", stock: "0", threshold: "" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function load() {
+    try {
+      const id = storeId;
+      if (!id) throw new Error("No store is associated with this account");
+      const data = await api<{ products: Product[] }>("/product/list?store_id=" + id);
+      setProducts(data.products);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load inventory");
+    }
+  }
+
+  async function loadMovements(productId?: number) {
+    try {
+      const id = storeId;
+      if (!id) throw new Error("No store is associated with this account");
+      let path = "/product/movements?store_id=" + id;
+      if (productId) path += "&product_id=" + productId;
+      const data = await api<{ movements: InventoryMovement[] }>(path);
+      setMovements(data.movements);
+      setMovementProduct(productId ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to load movements");
+    }
+  }
+
+  useEffect(() => { load(); loadMovements(); }, [storeId]);
+
+  function reset() {
+    setEditing(null);
+    setForm({ name: "", price: "", stock: "0", threshold: "" });
+  }
+
+  function beginEdit(product: Product) {
+    setEditing(product.id);
+    setForm({
+      name: product.name,
+      price: String(product.price),
+      stock: String(product.stock_quantity),
+      threshold: product.low_stock_threshold == null ? "" : String(product.low_stock_threshold),
+    });
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const id = storeId;
+      if (!id) throw new Error("No store is associated with this account");
+      const payload = {
+        store_id: id,
+        name: form.name,
+        price: Number(form.price),
+        stock_quantity: Number(form.stock),
+        low_stock_threshold: form.threshold === "" ? null : Number(form.threshold),
+      };
+
+      if (editing) {
+        await api("/product/update", { method: "PATCH", json: { ...payload, id: editing } });
+        setMessage("Product updated.");
+      } else {
+        await api("/product/create", { method: "POST", json: payload });
+        setMessage("Product created.");
+      }
+
+      reset();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save product");
+    }
+  }
+
+  async function adjust(product: Product, change: number) {
+    try {
+      const id = storeId;
+      if (!id) throw new Error("No store is associated with this account");
+      await api("/product/adjust", {
+        method: "POST",
+        json: { store_id: id, id: product.id, quantity_change: change, reason: "Manual stock adjustment" },
+      });
+      setMessage("Stock adjusted for " + product.name + ".");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to adjust stock");
+    }
+  }
+
+  async function remove(productId: number) {
+    if (!confirm("Delete this product?")) return;
+    try {
+      const id = storeId;
+      if (!id) throw new Error("No store is associated with this account");
+      await api("/product/delete", { method: "DELETE", json: { store_id: id, id: productId } });
+      setMessage("Product deleted.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to delete product");
+    }
+  }
+
+  return (
+    <DashboardShell title="Inventory">
+      {message && <p className="mb-4 rounded-xl bg-green-500/10 p-3 text-sm text-green-300">{message}</p>}
+      {error && <p className="mb-4 rounded-xl bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+
+      <form onSubmit={save} className="grid gap-3 rounded-2xl border border-white/10 bg-[#151515] p-5 md:grid-cols-4">
+        <input required minLength={2} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field" placeholder="Product name" />
+        <input required min="0" step="0.01" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className="field" placeholder="Price" />
+        <input required min="0" type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="field" placeholder="Opening stock" />
+        <input min="0" type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} className="field" placeholder="Low-stock threshold" />
+        <div className="flex gap-2 md:col-span-4">
+          <button className="rounded-xl bg-orange-500 px-4 py-3 text-sm font-semibold text-black">{editing ? "Save changes" : "Add product"}</button>
+          {editing && <button type="button" onClick={reset} className="rounded-xl bg-white/10 px-4 py-3 text-sm">Cancel</button>}
+        </div>
+      </form>
+
+      <section className="mt-6 overflow-x-auto rounded-2xl border border-white/10 bg-[#151515] p-5">
+        <table className="w-full text-left text-sm">
+          <thead className="text-xs text-white/40">
+            <tr><th className="px-3 py-3">NAME</th><th className="px-3 py-3">PRICE</th><th className="px-3 py-3">STOCK</th><th className="px-3 py-3">THRESHOLD</th><th className="px-3 py-3">ACTIONS</th></tr>
+          </thead>
+          <tbody>
+            {products.map((product) => (
+              <tr key={product.id} className="border-t border-white/5">
+                <td className="px-3 py-4">{product.name}</td>
+                <td className="px-3 py-4">₦{Number(product.price).toLocaleString()}</td>
+                <td className="px-3 py-4">{product.stock_quantity}</td>
+                <td className="px-3 py-4">{product.low_stock_threshold ?? "—"}</td>
+                <td className="px-3 py-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => adjust(product, 1)} className="rounded bg-white/10 px-2 py-1 text-xs">+1</button>
+                    <button disabled={product.stock_quantity <= 0} onClick={() => adjust(product, -1)} className="rounded bg-white/10 px-2 py-1 text-xs disabled:opacity-30">-1</button>
+                    <button onClick={() => beginEdit(product)} className="rounded bg-white/10 px-2 py-1 text-xs">Edit</button>
+                    <button onClick={() => remove(product.id)} className="rounded bg-red-500/10 px-2 py-1 text-xs text-red-300">Delete</button>
+                    <button onClick={() => loadMovements(product.id)} className="rounded bg-orange-500/10 px-2 py-1 text-xs text-orange-300">Movements</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!products.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-white/30">No products yet.</td></tr>}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-white/10 bg-[#151515] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div><h2 className="font-semibold">Inventory movements</h2><p className="mt-1 text-xs text-white/35">{movementProduct ? "Product #" + movementProduct : "All store movements"}</p></div>
+          <button onClick={() => loadMovements()} className="rounded-lg bg-white/10 px-3 py-2 text-sm">Refresh all</button>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs text-white/40"><tr><th className="px-3 py-3">DATE</th><th className="px-3 py-3">PRODUCT</th><th className="px-3 py-3">CHANGE</th><th className="px-3 py-3">NEW STOCK</th><th className="px-3 py-3">REASON</th></tr></thead>
+            <tbody>
+              {movements.map((m) => (
+                <tr key={m.id} className="border-t border-white/5">
+                  <td className="px-3 py-3">{new Date(m.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-3">#{m.product_id}</td>
+                  <td className="px-3 py-3">{m.quantity_change > 0 ? "+" + m.quantity_change : m.quantity_change}</td>
+                  <td className="px-3 py-3">{m.new_quantity}</td>
+                  <td className="px-3 py-3">{m.reason || "—"}</td>
+                </tr>
+              ))}
+              {!movements.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-white/30">No movements yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </DashboardShell>
+  );
+}
