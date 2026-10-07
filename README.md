@@ -1,84 +1,84 @@
-# TX RetailOS
+# RetailOS Client
 
-Retail operations and point-of-sale management application built with Next.js, React, Tailwind CSS and PostgreSQL.
+Next.js frontend for the RetailOS Flask API.
 
-## Local setup
+## Architecture
 
-1. Install dependencies:
+```
+Browser
+  │
+  │ HTTPS + credentialed REST requests
+  ▼
+retailos-client (Next.js)
+  │
+  │ REST
+  ▼
+retailos-server (Flask)
+  │
+  ▼
+PostgreSQL
+```
+
+The client no longer owns authentication, database access, inventory logic, sales transactions, reports, or server-side API routes. The Flask server is the source of truth.
+
+## Run locally
+
+Create `.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:5000
+```
+
+Then:
 
 ```bash
 npm install
-```
-
-2. Copy `.env.example` to `.env.local` and set:
-
-- `DATABASE_URL`
-- `AUTH_SECRET`
-- `SETUP_KEY`
-- `DATABASE_SSL` (`true` by default)
-
-3. Initialize PostgreSQL:
-
-```bash
-psql "$DATABASE_URL" -f db/schema.sql
-```
-
-Optional demo products:
-
-```bash
-psql "$DATABASE_URL" -f db/seed.sql
-```
-
-4. Start the app:
-
-```bash
 npm run dev
 ```
 
-5. Create the first admin exactly once by POSTing JSON to `/api/setup` with the setup key, username, full name and password. After the first user exists, the endpoint refuses further initialization.
+The server must be running separately and must allow the frontend origin with:
 
-Example body:
-
-```json
-{
-  "setupKey": "your-setup-key",
-  "username": "john_admin",
-  "fullName": "John Admin",
-  "password": "a-strong-password"
-}
+```env
+FRONTEND_URL=http://localhost:3000
+SESSION_COOKIE_SECURE=false
+SESSION_COOKIE_SAMESITE=Lax
 ```
 
-## Backend
+For a production frontend hosted on another domain, set `FRONTEND_URL` to the exact frontend origin and use HTTPS. The server's cross-origin session cookie should use `SameSite=None` and `Secure=true`.
 
-The application includes session authentication, role-based authorization, PostgreSQL-backed users/products/sales/purchases/notifications/audit logs, transactional stock updates, reporting, live dashboard statistics, and secure first-admin setup.
+## Supported server-backed UI
 
-### Connected UI
+- Authentication
+- Store dashboard
+- Products
+- Inventory and stock adjustments
+- Sales/POS
+- Transactions
+- Customers
+- Low-stock alerts
+- Settings
 
-- Inventory: product create, edit, delete, stock snapshot and low-stock indicators
-- Sales/POS: live products, cart quantities, payment method and completed sales
-- Purchases: purchase submission, history and approval/stock updates
-- Transactions: search/filter, live history and sale cancellation
-- Users: admin creation, role changes and activation/deactivation
-- Reports: live sales, profit, payment, top-item, staff and seven-day trend data
-- Notifications: live notification list and read/mark-all-read actions
-- Dashboards: live sales, transaction, product, stock, low-stock, transaction and activity data
+Purchases, reports, employee roles, and notification APIs were removed from the client because they are not currently exposed by the Flask server contract.
 
-### Roles
+## API contract
 
-- `ADMIN`: full administration and user management
-- `MANAGER`: inventory, purchases, reports and operations
-- `EMPLOYEE`: selling, product browsing and transactions
+The frontend calls the server directly with `credentials: include` so the Flask session cookie remains HttpOnly.
 
-## Production build
+Examples:
 
-Before deployment, pull the latest `main`, install dependencies, and run:
-
-```bash
-npm install
-npm run build
-npm start
-```
-
-If the build succeeds, configure the same production environment variables on the hosting platform and initialize the production database with `db/schema.sql`.
-
-Never commit `.env.local` or production credentials.
+- `POST /auth/login`
+- `GET /auth/me`
+- `POST /auth/logout`
+- `GET /product/list?store_id=...`
+- `POST /product/create`
+- `PATCH /product/update`
+- `DELETE /product/delete`
+- `POST /product/adjust`
+- `POST /sales`
+- `GET /sales?store_id=...`
+- `GET /dashboard?store_id=...`
+- `GET /customers?store_id=...`
+- `POST /customers`
+- `GET /alerts?store_id=...`
+- `POST /alerts/generate-low-stock?store_id=...`
+- `POST /alerts/resolve?store_id=...&id=...`
