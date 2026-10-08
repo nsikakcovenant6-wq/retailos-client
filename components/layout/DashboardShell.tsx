@@ -14,6 +14,8 @@ const allItems: readonly NavItem[] = [
   ["Sales", "/sales", ["admin", "manager", "employee"]],
   ["Products & Inventory", "/inventory", ["admin", "manager", "employee"]],
   ["Sales History & Transactions", "/transactions", ["admin", "manager", "employee"]],
+  ["Customers", "/customers", ["admin", "manager", "employee"]],
+  ["Who Owes Me", "/debts", ["admin", "manager", "employee"]],
   ["Purchases", "/purchases", ["admin", "manager"]],
   ["Reports", "/report", ["admin", "manager"]],
   ["Users", "/users", ["admin"]],
