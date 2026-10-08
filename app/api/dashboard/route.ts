@@ -6,7 +6,7 @@ export async function GET(){
  try{
   const user=await requireSession();
   const [sales,products,lowStock,recent,activity]=await Promise.all([
-   query("select coalesce(sum(total_amount),0) as \"todaySales\", count(*)::int as \"todayTransactions\" from sales where status='COMPLETED' and created_at::date=current_date"),
+   query("select coalesce(sum(total_amount),0) as \"todaySales\", count(*)::int as \"todayTransactions\" from sales where status='COMPLETED' and (created_at at time zone 'Africa/Lagos')::date=(now() at time zone 'Africa/Lagos')::date"),
    query("select count(*)::int as count, coalesce(sum(stock_quantity),0)::int as units from products where active=true"),
    query("select id,name,stock_quantity as \"stockQuantity\" from products where active=true and stock_quantity<=5 order by stock_quantity,name limit 10"),
    query("select s.receipt_no as \"receiptNo\",s.total_amount as amount,s.payment,s.status,s.created_at as \"createdAt\",u.full_name as \"employeeName\" from sales s join users u on u.id=s.employee_id order by s.created_at desc limit 8"),
