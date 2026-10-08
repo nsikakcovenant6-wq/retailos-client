@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import {useEffect,useState} from "react";
 
 export type AppRole = "admin" | "manager" | "employee";
 
@@ -11,9 +12,8 @@ type NavItem = readonly [label: string, href: string, roles: readonly AppRole[]]
 const allItems: readonly NavItem[] = [
   ["Dashboard", "/admin-dashboard", ["admin", "manager", "employee"]],
   ["Sales", "/sales", ["admin", "manager", "employee"]],
-  ["Items", "/items", ["admin", "manager", "employee"]],
-  ["Inventory", "/inventory", ["admin", "manager"]],
-  ["Transactions", "/transactions", ["admin", "manager", "employee"]],
+  ["Products & Inventory", "/inventory", ["admin", "manager", "employee"]],
+  ["Sales History & Transactions", "/transactions", ["admin", "manager", "employee"]],
   ["Purchases", "/purchases", ["admin", "manager"]],
   ["Reports", "/report", ["admin", "manager"]],
   ["Users", "/users", ["admin"]],
@@ -33,6 +33,8 @@ export default function DashboardShell({
   title: string;
 }) {
   const pathname = usePathname();
+  const [storeName,setStoreName]=useState("My Store");
+  useEffect(()=>{fetch("/api/store").then(r=>r.json()).then(d=>{if(d.name)setStoreName(d.name)}).catch(()=>{})},[]);
   const dashboardHref = `/${role}-dashboard`;
   const items = allItems
     .filter(([, , roles]) => roles.includes(role))
@@ -77,7 +79,8 @@ export default function DashboardShell({
       <main className="min-w-0 flex-1">
         <header className="flex items-center justify-between border-b border-white/10 px-5 py-4 md:px-8">
           <div>
-            <p className="text-xs uppercase tracking-wider text-white/35">{role}</p>
+            <p className="text-xs uppercase tracking-wider text-white/75">Store: {storeName}</p>
+            <p className="text-xs uppercase tracking-wider text-white/70">{role}</p>
             <p className="font-medium">{user}</p>
           </div>
           <Link
