@@ -16,46 +16,7 @@ export async function GET(request: Request) {
   } catch (error) { return NextResponse.json({ error: "Unable to load sales" }, { status: 500 }); }
 }
 
-export async function POST(request: Request) {
-  try {
-    const user = await requireSession(["ADMIN", "MANAGER", "EMPLOYEE"]);
-    const body = await request.json();
-    const payment = String(body.payment ?? "").toUpperCase();
-    const items = Array.isArray(body.items) ? body.items : [];
-    if (!["CASH", "TRANSFER", "POS"].includes(payment) || !items.length) return NextResponse.json({ error: "Payment method and cart items are required" }, { status: 400 });
-
-    const sale = await transaction(async client => {
-      const receipt = receiptNo();
-      let total = 0;
-      let totalCost = 0;
-      const normalized: { id: string; quantity: number; price: number; cost: number; line: number }[] = [];
-      for (const item of items) {
-        const id = String(item.productId ?? "");
-        const quantity = Number(item.quantity);
-        if (!id || !Number.isInteger(quantity) || quantity <= 0) throw new Error("Invalid sale item");
-        const product = await client.query("select selling_price, cost_price, stock_quantity from products where id=$1 and active=true for update", [id]);
-        if (!product.rowCount) throw new Error("Product not found");
-        const p = product.rows[0];
-        if (p.stock_quantity < quantity) throw new Error(`Insufficient stock for product ${id}`);
-        const price = Number(p.selling_price); const cost = Number(p.cost_price); const line = price * quantity;
-        total += line; totalCost += cost * quantity; normalized.push({ id, quantity, price, cost, line });
-      }
-      const created = await client.query("insert into sales(receipt_no,employee_id,payment,status,total_amount,total_cost) values($1,$2,$3,'COMPLETED',$4,$5) returning id, receipt_no as \"receiptNo\", total_amount as \"totalAmount\", payment, status, created_at as \"createdAt\"", [receipt, user.id, payment, total, totalCost]);
-      for (const item of normalized) {
-        await client.query("insert into sale_items(sale_id,product_id,quantity,unit_price,unit_cost,line_total) values($1,$2,$3,$4,$5,$6)", [created.rows[0].id, item.id, item.quantity, item.price, item.cost, item.line]);
-        await client.query("update products set stock_quantity=stock_quantity-$2 where id=$1", [item.id, item.quantity]);
-      }
-      await client.query("insert into audit_logs(user_id,action,entity,entity_id,details) values($1,'CREATE','SALE',$2,$3)", [user.id, created.rows[0].id, JSON.stringify({ receiptNo: receipt, total })]);
-      return created.rows[0];
-    });
-    return NextResponse.json({ sale }, { status: 201 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to complete sale";
-    const status = message === "UNAUTHORIZED" || message === "FORBIDDEN" ? 401 : message.includes("Insufficient") || message.includes("required") || message.includes("Invalid") ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
-  }
-}
-
+export async function POST(request:Request){try{const user=await requireSession(["ADMIN","MANAGER","EMPLOYEE"]);const body=await request.json(),payment=String(body.payment||"").toUpperCase(),items=Array.isArray(body.items)?body.items:[];if(!["CASH","TRANSFER","POS"].includes(payment)||!items.length)throw new Error("Payment method and cart items required");const sale=await transaction(async client=>{let total=0,totalCost=0;const lines:{id:string;quantity:number;unit:string;base:number;price:number;cost:number;line:number;service:boolean}[]=[];for(const item of items){const id=String(item.productId||""),quantity=Number(item.quantity);if(!id||!Number.isInteger(quantity)||quantity<=0)throw new Error("Invalid sale quantity");const r=await client.query("select id,item_type,cost_price,stock_quantity from products where id=$1 and active=true for update",[id]);if(!r.rowCount)throw new Error("Product not found");const p=r.rows[0],u=await client.query("select name,base_quantity,price from product_units where product_id=$1 and name=$2",[id,String(item.unitName||"")]);if(!u.rowCount)throw new Error("Invalid selling unit");const unit=u.rows[0],base=Number(unit.base_quantity)*quantity,service=p.item_type==="SERVICE";if(!service&&(!Number.isInteger(base)||base>Number(p.stock_quantity)))throw new Error("Insufficient stock or invalid base quantity");const price=service?Number(item.unitPrice):Number(unit.price);if(!Number.isFinite(price)||price<0||Math.round(price*100)!==price*100)throw new Error("Invalid service price");const line=Math.round(price*quantity*100)/100,cost=service?0:Number(p.cost_price)*base;total+=line;totalCost+=cost;lines.push({id,quantity,unit:unit.name,base,price,cost,line,service})}total=Math.round(total*100)/100;const paid=body.amountPaid===undefined?total:Number(body.amountPaid);if(!Number.isFinite(paid)||paid<0||paid>total||Math.round(paid*100)!==paid*100)throw new Error("Invalid amount paid");const customerId=body.customerId||null;if(paid<total&&!customerId)throw new Error("Customer required for unpaid balance");if(customerId){const r=await client.query("select id from customers where id=$1 and active=true",[customerId]);if(!r.rowCount)throw new Error("Customer not found")}const receipt=receiptNo();const created=await client.query('insert into sales(receipt_no,employee_id,payment,status,total_amount,total_cost,amount_paid,customer_id) values($1,$2,$3,\'COMPLETED\',$4,$5,$6,$7) returning id,receipt_no as "receiptNo",total_amount as "totalAmount",amount_paid as "amountPaid",created_at as "createdAt"',[receipt,user.id,payment,total,totalCost,paid,customerId]);const saleId=created.rows[0].id;for(const l of lines){await client.query("insert into sale_items(sale_id,product_id,quantity,unit_price,unit_cost,line_total,unit_name,base_quantity) values($1,$2,$3,$4,$5,$6,$7,$8)",[saleId,l.id,l.quantity,l.price,l.cost/l.quantity,l.line,l.unit,l.base]);if(!l.service)await client.query("update products set stock_quantity=stock_quantity-$2 where id=$1",[l.id,l.base])}if(paid>0)await client.query("insert into sale_payments(sale_id,amount,method,recorded_by) values($1,$2,$3,$4)",[saleId,paid,payment,user.id]);await client.query("insert into audit_logs(user_id,action,entity,entity_id,details) values($1,'CREATE','SALE',$2,$3)",[user.id,saleId,JSON.stringify({receipt,total,paid})]);return {...created.rows[0],balance:Math.round((total-paid)*100)/100}});return NextResponse.json({sale},{status:201})}catch(e){const message=e instanceof Error?e.message:"Unable to complete sale";return NextResponse.json({error:message},{status:message==="UNAUTHORIZED"?401:message==="FORBIDDEN"?403:400})}}
 export async function PATCH(request: Request) {
   try {
     const user = await requireSession(["ADMIN", "MANAGER"]);
@@ -63,9 +24,9 @@ export async function PATCH(request: Request) {
     await transaction(async client => {
       const sale = await client.query("select id,status from sales where id=$1 for update", [id]);
       if (!sale.rowCount) throw new Error("Sale not found");
-      if (sale.rows[0].status === "CANCELLED") return;
-      const items = await client.query("select product_id,quantity from sale_items where sale_id=$1", [id]);
-      for (const item of items.rows) await client.query("update products set stock_quantity=stock_quantity+$2 where id=$1", [item.product_id, item.quantity]);
+      if (sale.rows[0].status === "CANCELLED") return; const paid=await client.query("select amount_paid from sales where id=$1",[id]); if(Number(paid.rows[0].amount_paid)>0) throw new Error("Refund recorded payments before cancelling this sale");
+      const items = await client.query("select si.product_id,si.base_quantity, p.item_type from sale_items si join products p on p.id=si.product_id where sale_id=$1", [id]);
+      for (const item of items.rows.filter((i:any)=>i.item_type!=="SERVICE")) await client.query("update products set stock_quantity=stock_quantity+$2 where id=$1", [item.product_id, item.base_quantity]);
       await client.query("update sales set status='CANCELLED' where id=$1", [id]);
       await client.query("insert into audit_logs(user_id,action,entity,entity_id) values($1,'CANCEL','SALE',$2)", [user.id, id]);
     });
