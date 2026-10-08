@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const search = p.get("search")?.trim() ?? "";
     const status = p.get("status")?.trim() ?? "";
     const payment = p.get("payment")?.trim() ?? "";
-    const result = await query("select s.id, s.receipt_no as \"receiptNo\", s.total_amount as \"totalAmount\", s.payment, s.status, s.created_at as \"createdAt\", u.full_name as \"employeeName\" from sales s join users u on u.id=s.employee_id where ($1='' or s.receipt_no ilike '%'||$1||'%') and ($2='' or s.status::text=$2) and ($3='' or s.payment::text=$3) order by s.created_at desc limit 100", [search, status, payment]);
+    const result = await query("select s.id, s.receipt_no as \"receiptNo\", s.total_amount as \"totalAmount\", s.amount_paid as \"amountPaid\", (s.total_amount-s.amount_paid) as \"balance\", (select coalesce(json_agg(json_build_object('name',pr.name,'unit',si.unit_name,'quantity',si.quantity,'baseQuantity',si.base_quantity,'price',si.unit_price)),'[]'::json) from sale_items si join products pr on pr.id=si.product_id where si.sale_id=s.id) as \"items\", s.payment, s.status, s.created_at as \"createdAt\", u.full_name as \"employeeName\" from sales s join users u on u.id=s.employee_id where ($1='' or s.receipt_no ilike '%'||$1||'%') and ($2='' or s.status::text=$2) and ($3='' or s.payment::text=$3) order by s.created_at desc limit 100", [search, status, payment]);
     return NextResponse.json({ sales: result.rows });
   } catch (error) { return NextResponse.json({ error: "Unable to load sales" }, { status: 500 }); }
 }
