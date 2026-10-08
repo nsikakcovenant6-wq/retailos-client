@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import DashboardShell from "@/components/layout/DashboardShell";
+import {formatNigeriaDateTime} from "@/lib/nigeria-time";
 
 type Role = "admin" | "manager" | "employee";
 type SessionUser = { id: string; username: string; fullName: string; role: string };
@@ -17,6 +18,7 @@ export default function LiveDashboard({ role, user, title }: { role: Role; user:
   const [data, setData] = useState<Data | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [error, setError] = useState("");
+  const [loading,setLoading]=useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -34,7 +36,7 @@ export default function LiveDashboard({ role, user, title }: { role: Role; user:
         setData(dashboard);
         setSessionUser(currentUser);
       })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load dashboard"));
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load dashboard")).finally(()=>setLoading(false));
   }, []);
 
   const displayUser = sessionUser?.fullName || user;
@@ -42,6 +44,7 @@ export default function LiveDashboard({ role, user, title }: { role: Role; user:
 
   return (
     <DashboardShell role={role} user={displayUser} title={title}>
+      {loading&&<p role="status" className="mb-4 text-sm text-white/75">Connecting to your store and loading live data. This may take a moment.</p>}
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <Metric title="Today's Sales" value={money(data?.stats.todaySales || 0)} />
         <Metric title="Transactions" value={String(data?.stats.todayTransactions || 0)} />
@@ -76,7 +79,7 @@ export default function LiveDashboard({ role, user, title }: { role: Role; user:
               <tbody>
                 {data?.recent.length ? data.recent.map((transaction) => (
                   <tr key={transaction.receiptNo} className="border-t border-white/5">
-                    <td className="px-3 py-3">{new Date(transaction.createdAt).toLocaleString()}</td>
+                    <td className="px-3 py-3">{formatNigeriaDateTime(transaction.createdAt)}</td>
                     <td className="px-3 py-3">{transaction.receiptNo}</td>
                     <td className="px-3 py-3">{money(transaction.amount)}</td>
                     <td className="px-3 py-3">{transaction.payment}</td>
@@ -93,7 +96,7 @@ export default function LiveDashboard({ role, user, title }: { role: Role; user:
             {data?.activity.length ? data.activity.map((item, index) => (
               <div key={`${item.createdAt}-${index}`} className="flex justify-between rounded-lg bg-white/5 p-3 text-sm">
                 <span>{item.userName} · {item.action} {item.entity.toLowerCase()}</span>
-                <span className="text-white/30">{new Date(item.createdAt).toLocaleString()}</span>
+                <span className="text-white/30">{formatNigeriaDateTime(item.createdAt)}</span>
               </div>
             )) : <p className="text-sm text-white/40">No activity yet.</p>}
           </div>
