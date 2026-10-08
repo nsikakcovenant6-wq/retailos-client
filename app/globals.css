@@ -38,7 +38,7 @@ button:disabled {
 
 .field {
   width: 100%;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  border: 1px solid rgb(255 255 255 / 0.35);
   border-radius: 0.75rem;
   background: #101010;
   color: #ffffff;
@@ -47,7 +47,7 @@ button:disabled {
 }
 
 .field::placeholder {
-  color: rgb(255 255 255 / 0.3);
+  color: rgb(255 255 255 / 0.72);
 }
 
 .field:focus {
@@ -59,3 +59,6 @@ button:disabled {
   background: #151515;
   color: #ffffff;
 }
+
+/* Stronger contrast for previously faint secondary copy on dark surfaces. */
+.text-white\\/30,.text-white\\/35,.text-white\\/40,.text-white\\/45,.text-white\\/50 {color:rgb(255 255 255 / .75)}
